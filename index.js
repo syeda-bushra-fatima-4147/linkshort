@@ -2,7 +2,9 @@ const express = require('express');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+app.set('trust proxy', true);
 
 const db = new DatabaseSync('links.db');
 db.exec('CREATE TABLE IF NOT EXISTS links (code TEXT PRIMARY KEY, url TEXT NOT NULL, clicks INTEGER DEFAULT 0)');
@@ -21,7 +23,7 @@ app.post('/shorten', function (req, res) {
   }
   const code = makeCode();
   db.prepare('INSERT INTO links (code, url) VALUES (?, ?)').run(code, url);
-  res.json({ short: 'http://localhost:' + PORT + '/' + code });
+  res.json({ short: req.protocol + '://' + req.get('host') + '/' + code });
 });
 
 app.get('/:code', function (req, res) {
@@ -32,5 +34,5 @@ app.get('/:code', function (req, res) {
 });
 
 app.listen(PORT, function () {
-  console.log('LinkShort running on http://localhost:' + PORT);
+  console.log('LinkShort running on port ' + PORT);
 });
