@@ -1,7 +1,7 @@
-
+```javascript
 const express = require('express');
 const cors = require('cors');
-const { DatabaseSync } = require('node:sqlite');
+const { MongoClient } = require('mongodb');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,72 +13,105 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// SQLite database
-const db = new DatabaseSync('links.db');
+// MongoDB connection
+const client = new MongoClient(process.env.MONGO_URI);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS links (
-    code TEXT PRIMARY KEY,
-    url TEXT NOT NULL,
-    clicks INTEGER DEFAULT 0
-  )
-`);
+let linksCollection;
 
 // Generate short code
 function makeCode() {
   return Math.random().toString(36).substring(2, 8);
 }
 
-// Shorten URL
-app.post('/shorten', function (req, res) {
-  const url = req.body.url;
-
-  if (!url || !url.startsWith('http')) {
-    return res.status(400).json({
-      error: 'Enter a full link starting with https://'
-    });
-  }
-
-  const code = makeCode();
-
+// Start server after MongoDB connects
+async function startServer() {
   try {
-    db.prepare(
-      'INSERT INTO links (code, url) VALUES (?, ?)'
-    ).run(code, url);
+    await client.connect();
 
-    const shortUrl =
-      req.protocol + '://' + req.get('host') + '/' + code;
+    console.log('MongoDB connected successfully!');
 
-    res.json({
-      short: shortUrl,
-      shortUrl: shortUrl
+    const database = client.db('linkshort');
+
+    linksCollection = database.collection('links');
+
+    await linksCollection.createIndex(
+      { code: 1 },
+      { unique: true }
+    );
+
+    // Shorten URL
+    app.post('/shorten', async function (req, res) {
+      try {
+        const url = req.body.url;
+
+        if (!url || !url.startsWith('http')) {
+          return res.status(400).json({
+            error: 'Enter a full link starting with https://'
+          });
+        }
+
+        const code = makeCode();
+
+        await linksCollection.insertOne({
+          code: code,
+          url: url,
+          clicks: 0
+        });
+
+        const shortUrl =
+          req.protocol + '://' + req.get('host') + '/' + code;
+
+        res.json({
+          short: shortUrl,
+          shortUrl: shortUrl
+        });
+
+      } catch (error) {
+        console.error('Shorten error:', error);
+
+        res.status(500).json({
+          error: 'Could not create short link'
+        });
+      }
+    });
+
+    // Redirect shortened URL
+    app.get('/:code', async function (req, res) {
+      try {
+        const code = req.params.code;
+
+        const row = await linksCollection.findOne({
+          code: code
+        });
+
+        if (!row) {
+          return res.status(404).send('Link not found');
+        }
+
+        await linksCollection.updateOne(
+          { code: code },
+          { $inc: { clicks: 1 } }
+        );
+
+        res.redirect(row.url);
+
+      } catch (error) {
+        console.error('Redirect error:', error);
+
+        res.status(500).send('Server error');
+      }
+    });
+
+    // Start server
+    app.listen(PORT, function () {
+      console.log('LinkShort running on port ' + PORT);
     });
 
   } catch (error) {
-    res.status(500).json({
-      error: 'Could not create short link'
-    });
+    console.error('MongoDB connection failed:', error);
+    process.exit(1);
   }
-});
+}
 
-// Redirect shortened URL
-app.get('/:code', function (req, res) {
-  const row = db.prepare(
-    'SELECT url FROM links WHERE code = ?'
-  ).get(req.params.code);
-
-  if (!row) {
-    return res.status(404).send('Link not found');
-  }
-
-  db.prepare(
-    'UPDATE links SET clicks = clicks + 1 WHERE code = ?'
-  ).run(req.params.code);
-
-  res.redirect(row.url);
-});
-
-// Start server
-app.listen(PORT, function () {
-  console.log('LinkShort running on port ' + PORT);
-});
+startServer();
+```
