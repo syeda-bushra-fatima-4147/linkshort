@@ -1,6 +1,10 @@
 import { useState } from "react";
 import "./App.css";
 
+const API_URL = import.meta.env.DEV
+? "http://localhost:3000"
+: "https://linkshort-2fc1.onrender.com";
+
 function App() {
   const [url, setUrl] = useState("");
   const [shortUrl, setShortUrl] = useState("");
@@ -19,7 +23,7 @@ function App() {
       setShortUrl("");
 
       const response = await fetch(
-        "https://linkshort-2fc1.onrender.com/shorten",
+        `${API_URL}/shorten`,
         {
           method: "POST",
           headers: {
