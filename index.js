@@ -1,4 +1,4 @@
-```javascript
+
 const express = require('express');
 const cors = require('cors');
 const { MongoClient } = require('mongodb');
@@ -114,4 +114,3 @@ async function startServer() {
 }
 
 startServer();
-```
